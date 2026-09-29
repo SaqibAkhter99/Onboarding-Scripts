@@ -10,9 +10,6 @@ The scripts are intentionally dry-run by default. They provide a repeatable, aud
 | --- | --- |
 | `onboard-azure.go` | Adds an existing Entra ID user to a group, grants an Azure RBAC role at an explicit scope, and writes an owner-only local audit record. |
 | `teams-bitbucket-onboard.go` | Adds an existing Bitbucket Data Center user to a group and can send a completion notification to a Microsoft Teams webhook. |
-| `azure-onboarding-scripts-guide.md` | Detailed, source-order explanation of both scripts, prerequisites, permissions, and production hardening. |
-| `azure-onboarding-scripts-guide.pdf` | Formatted PDF version of the detailed guide. |
-| `render-guide-pdf.go` | Dependency-free renderer used to create the PDF from the Markdown guide. |
 
 ## Prerequisites
 
@@ -73,18 +70,6 @@ go run teams-bitbucket-onboard.go \
 ```
 
 This integration is for Bitbucket Data Center/Server. Bitbucket Cloud has a different administration and provisioning model; use Atlassian Administration or the organization’s approved provisioning integration instead.
-
-## Detailed guide and PDF
-
-Read [the detailed guide](azure-onboarding-scripts-guide.md) for the line-by-line and block-by-block explanation.
-
-To regenerate the PDF after updating the guide:
-
-```bash
-go run render-guide-pdf.go \
-  azure-onboarding-scripts-guide.md \
-  azure-onboarding-scripts-guide.pdf
-```
 
 ## Security notes
 
