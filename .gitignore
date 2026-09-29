@@ -1,9 +1,3 @@
-# Locally generated onboarding evidence may contain employee identifiers.
-onboarding-audit-*.json
-
-# Generated from azure-onboarding-scripts-guide.md.
-azure-onboarding-scripts-guide.pdf
-
 # Keep local secrets and environment configuration out of version control.
 .env
 .env.*
