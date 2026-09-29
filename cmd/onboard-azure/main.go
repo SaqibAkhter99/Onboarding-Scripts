@@ -4,8 +4,8 @@
 //
 // Examples:
 //
-//	go run onboard-azure.go --email user@company.com --entra-group Engineering --dry-run
-//	go run onboard-azure.go --email user@company.com --entra-group Engineering \
+//	go run ./cmd/onboard-azure --email user@company.com --entra-group Engineering
+//	go run ./cmd/onboard-azure --email user@company.com --entra-group Engineering \
 //	  --role Reader --scope /subscriptions/<subscription-id> --apply
 package main
 
@@ -69,20 +69,25 @@ func main() {
 			fmt.Printf("Would: assign %q at %s if absent\n", *role, *scope)
 		}
 		fmt.Println("Re-run with --apply and an explicit --scope after reviewing the plan.")
+		fmt.Println("RESULT: dry run")
 		return
 	}
 
 	ensureAzureCLI()
 	userJSON := run("az", "ad", "user", "show", "--id", *email, "--query", "{id:id,displayName:displayName,userPrincipalName:userPrincipalName}", "-o", "json")
 	var user azureUser
-	if err := json.Unmarshal([]byte(userJSON), &user); err != nil || user.ID == "" {
-		fail("could not resolve Entra user %q: %v", *email, err)
+	if err := json.Unmarshal([]byte(userJSON), &user); err != nil {
+		fail("could not parse Entra user %q: %v", *email, err)
+	}
+	if user.ID == "" {
+		fail("could not resolve Entra user %q: Azure CLI returned no object ID", *email)
 	}
 	fmt.Printf("Resolved: %s (%s)\n", user.DisplayName, user.UserPrincipalName)
 
-	result := audit{Timestamp: time.Now().UTC().Format(time.RFC3339), Email: *email, Group: *group, Role: *role, Scope: *scope, UserID: user.ID}
+	now := time.Now().UTC()
+	result := audit{Timestamp: now.Format(time.RFC3339), Email: *email, Group: *group, Role: *role, Scope: *scope, UserID: user.ID}
 	member := strings.TrimSpace(run("az", "ad", "group", "member", "check", "--group", *group, "--member-id", user.ID, "--query", "value", "-o", "tsv"))
-	if member != "true" {
+	if !strings.EqualFold(member, "true") {
 		run("az", "ad", "group", "member", "add", "--group", *group, "--member-id", user.ID)
 		result.GroupAdded = true
 		fmt.Println("Added to Entra group.")
@@ -99,7 +104,12 @@ func main() {
 		fmt.Println("Azure RBAC role already exists at this scope; skipped.")
 	}
 
-	writeAudit(result)
+	writeAudit(result, now)
+	if !result.GroupAdded && !result.RoleAdded {
+		fmt.Println("RESULT: no changes")
+	} else {
+		fmt.Println("RESULT: applied")
+	}
 }
 
 func ensureAzureCLI() {
@@ -111,21 +121,34 @@ func ensureAzureCLI() {
 
 func run(name string, args ...string) string {
 	cmd := exec.Command(name, args...)
-	output, err := cmd.CombinedOutput()
+	// Keep stdout clean: Azure CLI warnings on stderr must not corrupt JSON/TSV.
+	output, err := cmd.Output()
 	if err != nil {
-		fail("command failed: %s %s\n%s", name, strings.Join(args, " "), strings.TrimSpace(string(output)))
+		stderr := ""
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			stderr = strings.TrimSpace(string(exitErr.Stderr))
+		}
+		if stderr == "" {
+			stderr = err.Error()
+		}
+		fail("command failed: %s %s\n%s", name, strings.Join(args, " "), stderr)
 	}
 	return string(output)
 }
 
-func writeAudit(entry audit) {
+func writeAudit(entry audit, now time.Time) {
 	b, err := json.MarshalIndent(entry, "", "  ")
 	if err != nil {
 		fail("create audit record: %v", err)
 	}
-	name := "onboarding-audit-" + time.Now().UTC().Format("20060102T150405Z") + ".json"
+	name := "onboarding-audit-" + now.Format("20060102T150405Z") + ".json"
 	path := filepath.Join(".", name)
-	if err := os.WriteFile(path, append(b, '\n'), 0600); err != nil {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		fail("create audit record: %v", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(append(b, '\n')); err != nil {
 		fail("write audit record: %v", err)
 	}
 	fmt.Printf("Audit record written to %s\n", path)
